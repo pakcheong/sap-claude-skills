@@ -112,11 +112,13 @@ If REST API also fails, use browser navigation:
    - GitHub PRs/issues directly mentioned
    - Figma/design tool links
    - Technical documentation (API specs, RFCs)
+   - **ServiceNow incidents** (`https://itsm.services.sap/now/*/incident/*`)
 
 2. **MEDIUM PRIORITY** (quick scan):
    - Related JIRA tickets (will be fetched separately)
    - Meeting notes, discussion threads
    - Support/training documents
+   - ServiceNow requests/problems (non-incidents)
 
 3. **LOW PRIORITY** (note but don't fetch):
    - General wiki pages
@@ -133,6 +135,13 @@ If REST API also fails, use browser navigation:
      url="https://wiki.one.int.sap/wiki/rest/api/content/<PAGE-ID>?expand=body.storage,version"
    )
    
+   # For ServiceNow incidents - use ServiceNow API
+   mcp__sap-auth-mcp__sap_make_request(
+     method="GET",
+     url="https://itsm.services.sap/api/now/table/incident/<INCIDENT-ID>?sysparm_display_value=true",
+     headers={"Accept": "application/json"}
+   )
+   
    # For other SAP internal pages
    mcp__sap-auth-mcp__sap_make_request(
      method="GET",
@@ -142,6 +151,17 @@ If REST API also fails, use browser navigation:
    ```
 
 2. **Extract ACTIONABLE information:**
+   
+   **For ServiceNow Incidents** (critical for production issues):
+   - **Incident summary & description**: What broke, when, impact
+   - **Priority/Severity**: P1/P2/P3 determines urgency
+   - **Affected systems**: What's down or degraded
+   - **Workarounds applied**: Temporary fixes in place
+   - **Root cause analysis**: Why it happened (if available)
+   - **Resolution notes**: How it was fixed
+   - **Related incidents**: Pattern of similar issues
+   - **Customer impact**: Who's affected, business impact
+   - **Timeline**: When reported, when resolved, SLA status
    
    **Requirements & Acceptance Criteria:**
    - MUST-have vs SHOULD-have features
@@ -192,6 +212,8 @@ https?://wiki\.one\.int\.sap/[^\s\)"'\]]+
 https?://github\.tools\.sap/[^\s\)"'\]]+
 https?://[^\s\)"'\]]+figma\.com[^\s\)"'\]]+
 https?://jira\.tools\.sap/browse/[A-Z]+-\d+
+https?://itsm\.services\.sap/now/[^\s\)"'\]]+/incident/[^\s\)"'\]]+
+https?://itsm\.services\.sap/[^\s\)"'\]]+
 ```
 
 **Link Analysis Output Format:**
@@ -199,6 +221,7 @@ For each link, provide:
 - 🔴 **RED FLAG** if conflicting information found
 - 🟡 **WARNING** if important details missing from ticket
 - 🟢 **ALIGNED** if ticket properly reflects linked content
+- 🔥 **PRODUCTION INCIDENT** if ServiceNow incident (requires immediate attention)
 
 ## Step 2: Build Ticket Hierarchy (Epic → Story → Task)
 Understand where this ticket fits in the bigger picture.
@@ -512,11 +535,54 @@ For EACH link found, provide actionable summary:
 
 ---
 
+#### 🔥 [ServiceNow] Production Incident - Permission Check Timeout
+**URL**: https://itsm.services.sap/now/cwf/agent/record/incident/cfa604732b62ba50b4ecf3b4c191bf87
+**Incident**: INC0123456 | **Priority**: P2 - High | **Status**: Resolved
+
+**What Happened**:
+- Permission checks timing out (>5 seconds) during peak load
+- Affected 500+ users on 2026-03-10 between 14:00-15:30 UTC
+- Customer-facing workspaces inaccessible
+
+**Root Cause**:
+- Database connection pool exhausted under load
+- Missing index on `workspace_permissions.user_id` column
+- Recursive permission inheritance queries not optimized
+
+**Resolution Applied**:
+- Added database index (reduced query time from 4.2s → 45ms)
+- Increased connection pool size: 10 → 50 connections
+- Implemented query result caching (5-minute TTL)
+
+**Preventive Measures**:
+- Add database query monitoring alerts (>100ms threshold)
+- Load testing required before production deployment
+- Connection pool monitoring added to dashboard
+
+**Impact on This Ticket**:
+- 🔴 **CRITICAL**: Must implement same optimizations
+- **Required**: Database indexes on all permission lookup queries
+- **Required**: Query performance testing with >1000 concurrent users
+- **Required**: Connection pool configuration validation
+- **Edge case identified**: Recursive inheritance must have depth limit
+
+**Lessons Learned**:
+- Implement circuit breaker pattern for database calls
+- Add request timeout at 200ms (fail fast, don't cascade)
+- Test with production-scale data (dev/staging had <100 workspaces, prod has 10,000+)
+
+---
+
 **📊 Documentation Summary**:
 - ✅ **Well-documented**: Requirements, architecture, edge cases all clear
 - ⚠️ **Conflict found**: Cache duration inconsistency needs resolution
 - ✅ **Implementable**: Code examples and migration scripts provided
 - ⏳ **External dependency**: Auth PR must merge first (2-day wait)
+- 🔥 **Production incident context**: Critical performance requirements identified from INC0123456
+  - Database indexing is mandatory
+  - Query performance must be <100ms (proven in production incident)
+  - Load testing with production-scale data required
+  - Circuit breaker pattern needed
 
 ---
 

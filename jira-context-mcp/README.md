@@ -90,6 +90,7 @@ The skill scans these locations for URLs:
 - 🔗 **Related Issues** (JIRA tickets, GitHub issues)
 - 📝 **Specifications** (API docs, OpenAPI specs)
 - 💬 **Communication** (Slack threads, meeting notes)
+- 🔥 **Production Incidents** (ServiceNow incidents - HIGH PRIORITY)
 
 ### How It Works
 
@@ -98,6 +99,9 @@ For **each link found**:
 1. **Access**: Use SAP Auth MCP to retrieve content
    ```
    mcp__sap-auth-mcp__sap_make_request(url=<URL>)
+   
+   # For ServiceNow incidents, uses API:
+   # /api/now/table/incident/<ID>?sysparm_display_value=true
    ```
 
 2. **Extract**: Pull out key information:
@@ -105,10 +109,13 @@ For **each link found**:
    - Architecture & design decisions
    - Context & motivation
    - Dependencies & constraints
+   - **For incidents**: Root cause, resolution, preventive measures
 
 3. **Summarize**: Include findings in the context report
 
 4. **Cross-reference**: Link information back to ticket requirements
+
+5. **Risk flagging**: ServiceNow incidents flagged as 🔥 HIGH PRIORITY
 
 ## Fallback Strategy
 
@@ -204,6 +211,19 @@ When APIs fail completely, extract from web UI:
   - 3-step wizard for permission requests
   - Error states for denied permissions
 - **Relevance**: UI that will consume this API endpoint
+
+**🔥 ServiceNow: Production Incident INC0123456**
+- **Type**: Production Incident (P2 - High)
+- **URL**: https://itsm.services.sap/now/cwf/agent/record/incident/cfa604...
+- **What Happened**: Permission checks timing out (>5s) during peak load, 500+ users affected
+- **Root Cause**: Missing database index + connection pool exhaustion
+- **Resolution**: Added index (4.2s → 45ms), increased pool size
+- **Impact on Ticket**:
+  - 🔴 CRITICAL: Must implement database indexes on all queries
+  - Required: Load testing with >1000 concurrent users
+  - Required: Circuit breaker pattern for DB calls
+  - Edge case: Recursive inheritance needs depth limit
+- **Lessons**: Test with production-scale data, implement timeouts
 
 ### 👥 Related Work
 **Sibling Tickets**:
