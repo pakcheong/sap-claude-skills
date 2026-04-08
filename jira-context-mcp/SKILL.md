@@ -429,13 +429,27 @@ For **"Relates to"** tickets:
 - Can we learn from their approach?
 
 **Build dependency chain:**
-```
-EPIC-123 (Q2 Initiative)
-  ├─ STORY-456 (Parent)
-  │   ├─ THIS-TICKET ⏳ BLOCKED BY → TASK-789 (In Progress, 80% done)
-  │   ├─ SIBLING-1 ✅ Done
-  │   └─ SIBLING-2 🔄 In Progress
-  └─ STORY-999 (Parallel work)
+```mermaid
+graph TD
+    EPIC[EPIC-123: Q2 Initiative]
+    STORY456[STORY-456: Parent]
+    THIS[THIS-TICKET<br/>⏳ Blocked]
+    TASK789[TASK-789<br/>In Progress 80%]
+    SIB1[SIBLING-1<br/>✅ Done]
+    SIB2[SIBLING-2<br/>🔄 In Progress]
+    STORY999[STORY-999: Parallel Work]
+    
+    EPIC --> STORY456
+    EPIC --> STORY999
+    STORY456 --> THIS
+    STORY456 --> SIB1
+    STORY456 --> SIB2
+    TASK789 -.blocks.-> THIS
+    
+    style THIS fill:#fff3cd,stroke:#856404
+    style SIB1 fill:#d4edda,stroke:#155724
+    style SIB2 fill:#cce5ff,stroke:#004085
+    style TASK789 fill:#fff3cd,stroke:#856404
 ```
 
 ## Step 5: Analyze Subtasks (Implementation Breakdown)
@@ -704,14 +718,31 @@ For EACH link found, provide actionable summary:
 ### 👥 Related Work & Dependencies
 
 **Dependency Chain** (Critical Path):
-```
-EPIC-1000 (Q2 Workspace Features)
-  ├─ AUTH-456 ⏳ BLOCKS THIS → In Review, ETA: 2 days
-  ├─ PARENT-500 (Workspace Permission System)
-  │   ├─ THIS-TICKET ⏸️ Blocked, can start with mocks
-  │   ├─ SIBLING-123 (Frontend) ⏳ Blocked by this ticket
-  │   ├─ SIBLING-124 (Caching) ✅ Done
-  │   └─ SIBLING-125 (Admin UI) 🔄 In Progress (60%)
+
+```mermaid
+graph TD
+    EPIC[EPIC-1000: Q2 Workspace Features]
+    AUTH[AUTH-456: Auth Framework Upgrade<br/>⏳ BLOCKS THIS<br/>Status: In Review, ETA: 2 days]
+    PARENT[PARENT-500: Workspace Permission System]
+    THIS[THIS-TICKET<br/>⏸️ Blocked, can start with mocks]
+    SIB1[SIBLING-123: Frontend<br/>⏳ Blocked by this ticket]
+    SIB2[SIBLING-124: Caching<br/>✅ Done]
+    SIB3[SIBLING-125: Admin UI<br/>🔄 In Progress 60%]
+    
+    EPIC --> AUTH
+    EPIC --> PARENT
+    AUTH -.blocks.-> THIS
+    PARENT --> THIS
+    PARENT --> SIB1
+    PARENT --> SIB2
+    PARENT --> SIB3
+    THIS -.blocks.-> SIB1
+    
+    style AUTH fill:#ffcccc
+    style THIS fill:#ffffcc
+    style SIB1 fill:#ffffcc
+    style SIB2 fill:#ccffcc
+    style SIB3 fill:#cce5ff
 ```
 
 **🚫 BLOCKERS** (Cannot proceed until resolved):
@@ -999,36 +1030,67 @@ API 429 → Try Git History → If still need API data, wait 30-60s → Try agai
 
 ### Recommended Decision Flow
 
-```
-START: Need ticket info for <TICKET-ID>
-  ↓
-  ├─ In git repository? 
-  │   YES → Try Tier 0: Git History
-  │         ├─ Found commits? 
-  │         │   YES → ✅ Use Git data (BEST outcome)
-  │         │   NO → Continue to API
-  │   NO → Continue to API
-  ↓
-  ├─ Try Tier 1: JIRA MCP
-  │   ├─ Success? → ✅ Done
-  │   ├─ 429 Rate Limit? 
-  │   │   → Try Tier 0 (Git) if not already tried
-  │   │   → If Git fails, wait 30-60s, try again
-  │   ├─ Other error? → Continue to Tier 2
-  ↓
-  ├─ Try Tier 2: SAP Auth MCP + REST API
-  │   ├─ Success? → ✅ Done
-  │   ├─ 429 Rate Limit?
-  │   │   → Try Tier 0 (Git) if not already tried
-  │   │   → If Git fails, wait 60s, try again
-  │   ├─ Other error? → Continue to Tier 3
-  ↓
-  ├─ Try Tier 3: Browser Extraction
-  │   ├─ Success? → ⚠️ Partial data (better than nothing)
-  │   ├─ Failed? → Continue to Tier 4
-  ↓
-  └─ Tier 4: Ask User
-      → Provide ticket URL, ask for key information
+```mermaid
+flowchart TD
+    START([Need ticket info for TICKET-ID])
+    GIT_CHECK{In git repository?}
+    GIT_TRY[Tier 0: Try Git History]
+    GIT_FOUND{Found commits?}
+    GIT_SUCCESS([✅ Use Git data<br/>BEST outcome!])
+    
+    MCP_TRY[Tier 1: Try JIRA MCP]
+    MCP_SUCCESS([✅ Done])
+    MCP_429{429 Rate Limit?}
+    MCP_ERROR{Other error?}
+    
+    AUTH_TRY[Tier 2: SAP Auth MCP + REST API]
+    AUTH_SUCCESS([✅ Done])
+    AUTH_429{429 Rate Limit?}
+    AUTH_ERROR{Other error?}
+    
+    BROWSER_TRY[Tier 3: Browser Extraction]
+    BROWSER_SUCCESS([⚠️ Partial data])
+    BROWSER_FAIL{Failed?}
+    
+    ASK_USER([Tier 4: Ask User<br/>Provide ticket URL])
+    
+    WAIT_RETRY[Wait 30-60s<br/>then retry]
+    
+    START --> GIT_CHECK
+    GIT_CHECK -->|YES| GIT_TRY
+    GIT_CHECK -->|NO| MCP_TRY
+    
+    GIT_TRY --> GIT_FOUND
+    GIT_FOUND -->|YES| GIT_SUCCESS
+    GIT_FOUND -->|NO| MCP_TRY
+    
+    MCP_TRY --> MCP_SUCCESS
+    MCP_TRY --> MCP_429
+    MCP_TRY --> MCP_ERROR
+    MCP_429 -->|Try Git if not tried| GIT_TRY
+    MCP_429 -->|Git failed| WAIT_RETRY
+    WAIT_RETRY --> MCP_TRY
+    MCP_ERROR --> AUTH_TRY
+    
+    AUTH_TRY --> AUTH_SUCCESS
+    AUTH_TRY --> AUTH_429
+    AUTH_TRY --> AUTH_ERROR
+    AUTH_429 -->|Try Git if not tried| GIT_TRY
+    AUTH_429 -->|Git failed| WAIT_RETRY
+    AUTH_ERROR --> BROWSER_TRY
+    
+    BROWSER_TRY --> BROWSER_SUCCESS
+    BROWSER_TRY --> BROWSER_FAIL
+    BROWSER_FAIL -->|YES| ASK_USER
+    
+    style GIT_SUCCESS fill:#ccffcc
+    style MCP_SUCCESS fill:#ccffcc
+    style AUTH_SUCCESS fill:#ccffcc
+    style BROWSER_SUCCESS fill:#ffffcc
+    style ASK_USER fill:#ffcccc
+    style GIT_TRY fill:#e6f3ff
+    style MCP_429 fill:#ffeecc
+    style AUTH_429 fill:#ffeecc
 ```
 
 **Key Insight**: For completed tickets, **Git History > JIRA API** because:
