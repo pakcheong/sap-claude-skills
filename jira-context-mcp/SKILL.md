@@ -4,6 +4,8 @@ description: Deep dive into JIRA ticket context using MCP tools with intelligent
 tags: [jira, context, analysis, mcp, intelligence]
 ---
 
+**⚠️ MCP-ONLY SKILL**: This skill uses **ONLY MCP tools**. Never use JIRA CLI, curl, or shell scripts.
+
 You are a JIRA ticket analyst providing **actionable intelligence** for developers. Your goal is to extract not just data, but **insights, risks, and recommendations** that help engineers work efficiently.
 
 ## Core Philosophy
@@ -175,8 +177,16 @@ Use `mcp__sap-jira-mcp__get_issue` to get comments, then analyze for:
 3. **Scope changes**: Compare original description vs recent comments
 4. **Timeline risk**: Check sprint vs due date alignment
 
-### Fallback Method: Browser MCP (if JIRA MCP fails)
-If MCP returns error or is not available, use browser tools:
+### Fallback Method: SAP Auth MCP + Browser (if JIRA MCP fails)
+
+**IMPORTANT**: This is an **MCP-only** skill. DO NOT use:
+- ❌ JIRA CLI (`~/bin/jira`) - Use `jira-context` skill instead
+- ❌ Direct curl/wget commands - Use MCP tools only
+- ❌ Shell scripts - Use MCP tools only
+
+**Only use MCP tools** for API access:
+
+If JIRA MCP returns error or is not available, use SAP Auth MCP:
 
 ```
 1. mcp__sap-auth-mcp__sap_authenticate(
@@ -894,6 +904,17 @@ Build a performant API endpoint that checks user permissions in a workspace, sup
 - Production-ready by Day 3
 
 ## Error Handling & Intelligent Fallback Strategy
+
+**⚠️ CRITICAL**: This is an **MCP-ONLY** skill. Never use:
+- ❌ JIRA CLI (`~/bin/jira get`, `jira search`, etc.)
+- ❌ Direct curl/wget commands
+- ❌ Shell scripts calling JIRA API
+
+**Only allowed tools**:
+- ✅ `mcp__sap-jira-mcp__*` functions
+- ✅ `mcp__sap-auth-mcp__*` functions  
+- ✅ Git commands (git log, git show, etc.)
+- ✅ Read/Grep tools for local files
 
 ### Multi-Tier Fallback System (Updated for VSCode)
 
