@@ -15,8 +15,113 @@ You are a JIRA ticket analyst providing **actionable intelligence** for develope
 
 Follow these steps:
 
-## Step 1: Get Main Ticket (Enhanced Data Collection)
-Parse ticket ID from args: {{args}}
+## Step 0: Smart Strategy Selection (Choose Best Approach)
+
+Before attempting any API calls, **intelligently choose the best data source** based on context:
+
+### Decision Tree:
+
+**1. Check if ticket is likely COMPLETED/MERGED**
+```bash
+# Quick git search to see if ticket exists in commit history
+git log --all --grep="<TICKET-ID>" --oneline -1
+```
+
+**If found in git history** → **USE GIT-FIRST STRATEGY** (Steps 0A-0E)
+**If not found** → **USE API-FIRST STRATEGY** (Step 1+)
+
+---
+
+## Step 0A: Git-First Strategy (For Completed Tickets)
+
+**Why Git First?**
+- ✅ **No rate limits** - Local file access
+- ✅ **Richer context** - Actual code, tests, decisions
+- ✅ **More accurate** - What was actually implemented
+- ✅ **Faster** - No API delays
+- ✅ **Always available** - Works offline
+
+### 0A-1: Find All Related Commits
+```bash
+# Find all commits mentioning this ticket
+git log --all --grep="<TICKET-ID>" --oneline
+
+# Get full details of main commits (first 3-5)
+git show <commit-hash> --stat
+git show <commit-hash>  # Full diff if needed
+```
+
+**Extract from commits**:
+- Commit messages → Summary of changes
+- PR descriptions → Requirements, API specs, examples
+- Code changes → Actual implementation
+- Test files → Acceptance criteria, edge cases
+- File paths → Components affected
+
+### 0A-2: Find Sibling Tickets in Commits
+```bash
+# Look for related ticket IDs in nearby commits
+git log --all --grep="<PARENT-ID>|<PROJECT>-<nearby-numbers>" --oneline
+
+# Example: If analyzing DWS-20938, also search for DWS-209[0-9][0-9]
+git log --all --since="2 months ago" --grep="DWS-209" --oneline | grep -E "DWS-209[0-9]{2}"
+```
+
+### 0A-3: Read Actual Implementation
+```bash
+# From commit diff, identify key files
+Read <controller-file>.rb
+Read <test-file>_test.rb
+Read config/routes.rb  # For API endpoints
+
+Grep "new_feature_name" app/  # Find all usages
+```
+
+### 0A-4: Extract Technical Details
+From code and tests, document:
+- **API Endpoints**: Routes, HTTP methods, parameters
+- **Request/Response Format**: From controller and tests
+- **Status Codes**: From test assertions
+- **Edge Cases**: From test descriptions (`context "when..."`, `it "should..."`)
+- **Business Logic**: From controller implementation
+- **Validations**: From model or controller checks
+
+### 0A-5: Build Timeline from Git History
+```bash
+# Find when ticket was completed
+git log --all --grep="<TICKET-ID>" --format="%h %ai %s" | head -5
+
+# Find related tickets' timeline
+git log --all --grep="<SIBLING-ID>" --format="%h %ai %s" | head -3
+```
+
+**Output**: Complete timeline from development to merge
+
+---
+
+### When Git-First Fails
+
+**If git log returns no commits**:
+- Ticket might be very recent (not yet committed)
+- Ticket might be in different branch
+- Ticket might not be started yet
+→ **Fall back to API-FIRST strategy** (Step 1)
+
+**If git log finds commits but insufficient detail**:
+- Use git history as primary source
+- Use API (Step 1) as supplementary for:
+  - Business context from description
+  - Comments/discussions
+  - Links to external docs
+
+---
+
+## Step 1: API-First Strategy (For In-Progress/New Tickets)
+
+**Use this when**:
+- Ticket not found in git history
+- Ticket is in progress or not started
+- Need business context and comments
 
 ### Primary Method: JIRA MCP
 ```
@@ -790,9 +895,42 @@ Build a performant API endpoint that checks user permissions in a workspace, sup
 
 ## Error Handling & Intelligent Fallback Strategy
 
-### Multi-Tier Fallback System
+### Multi-Tier Fallback System (Updated for VSCode)
 
-#### Tier 1: JIRA MCP (Primary - 95% success rate)
+**CRITICAL**: The order matters! Start with the most reliable source.
+
+---
+
+#### Tier 0: Git History Analysis (RECOMMENDED FIRST - 100% success for completed tickets)
+
+**Try this FIRST if**:
+- Working in a git repository
+- Ticket is likely completed/merged
+- API rate limits are a concern
+
+```bash
+# Check if ticket exists in git
+git log --all --grep="<TICKET-ID>" --oneline -1
+```
+
+**When it succeeds**: 
+- ✅ No rate limits
+- ✅ Richer information than JIRA
+- ✅ Actual code + tests + decisions
+- ✅ Works offline
+
+**When it fails**: 
+- Ticket not in git history (not started or not merged)
+- → Proceed to Tier 1
+
+**See Step 0A for complete Git-First strategy**
+
+---
+
+#### Tier 1: JIRA MCP (Primary for API access)
+
+**When to use**: Ticket not in git, or need business context/comments
+
 ```python
 try:
     result = mcp__sap-jira-mcp__get_issue(issue_key="DWS-12345")
@@ -802,11 +940,13 @@ except Error as e:
 
 **When it fails**: MCP server unavailable, network issues, ticket doesn't exist
 
-**Action**: Immediately fall back to Tier 2, don't retry (wastes time)
+**Action**: Immediately fall back to Tier 2 (or Tier 0 if not already tried)
 
 ---
 
-#### Tier 2: SAP Auth MCP + REST API (Fallback - 85% success rate)
+#### Tier 2: SAP Auth MCP + REST API (Fallback)
+
+**When to use**: MCP failed, but need API data
 ```python
 # Ensure authenticated
 mcp__sap-auth-mcp__sap_authenticate(
@@ -825,13 +965,62 @@ response = mcp__sap-auth-mcp__sap_make_request(
 **When it fails**: Rate limiting (429), authentication expired, API down
 
 **Action**: 
-- If 429 (rate limit): Wait 5 seconds, retry ONCE only
+- If 429 (rate limit): **Don't wait** - immediately try Tier 0 (Git) if not already tried
 - If auth expired: Re-authenticate, retry ONCE
 - Otherwise: Proceed to Tier 3
 
+**Rate Limit Strategy**:
+```
+API 429 → Try Git History → If still need API data, wait 30-60s → Try again
+```
+
 ---
 
-#### Tier 3: Browser Extraction (Last Resort - 70% success rate)
+### Recommended Decision Flow
+
+```
+START: Need ticket info for <TICKET-ID>
+  ↓
+  ├─ In git repository? 
+  │   YES → Try Tier 0: Git History
+  │         ├─ Found commits? 
+  │         │   YES → ✅ Use Git data (BEST outcome)
+  │         │   NO → Continue to API
+  │   NO → Continue to API
+  ↓
+  ├─ Try Tier 1: JIRA MCP
+  │   ├─ Success? → ✅ Done
+  │   ├─ 429 Rate Limit? 
+  │   │   → Try Tier 0 (Git) if not already tried
+  │   │   → If Git fails, wait 30-60s, try again
+  │   ├─ Other error? → Continue to Tier 2
+  ↓
+  ├─ Try Tier 2: SAP Auth MCP + REST API
+  │   ├─ Success? → ✅ Done
+  │   ├─ 429 Rate Limit?
+  │   │   → Try Tier 0 (Git) if not already tried
+  │   │   → If Git fails, wait 60s, try again
+  │   ├─ Other error? → Continue to Tier 3
+  ↓
+  ├─ Try Tier 3: Browser Extraction
+  │   ├─ Success? → ⚠️ Partial data (better than nothing)
+  │   ├─ Failed? → Continue to Tier 4
+  ↓
+  └─ Tier 4: Ask User
+      → Provide ticket URL, ask for key information
+```
+
+**Key Insight**: For completed tickets, **Git History > JIRA API** because:
+- No rate limits
+- More detailed (code + tests + decisions)
+- Shows what was actually implemented
+- Includes technical context missing from JIRA
+
+---
+
+#### Tier 3: Browser Extraction (Last Resort)
+
+**When to use**: All other methods failed, and ticket is critical
 When APIs completely fail, extract from web UI:
 
 ```
@@ -1027,6 +1216,40 @@ If hitting rate limits frequently:
 - **Time to value**: Ramp up new developer quickly
 
 **Use case**: New developer needs to understand codebase through active tickets
+
+---
+
+### Scenario 6: Analyzing Completed Ticket (Git-First) ⭐ NEW
+```bash
+/jira-context-mcp DWS-20938
+```
+
+**What happens** (automatic detection):
+1. Checks git history first
+2. Finds 15+ commits related to ticket
+3. Extracts complete implementation details
+4. Finds sibling tickets (DWS-20942, DWS-20943)
+5. Reads actual code and tests
+6. Builds timeline from commits
+
+**Expected output**:
+- ✅ Complete API specification (from code)
+- ✅ All status codes and meanings (from tests)
+- ✅ 11 test cases + 41 assertions analyzed
+- ✅ Technical decisions from commit messages
+- ✅ Actual implementation vs JIRA description
+- ✅ Timeline of development (merged 3/26, fixed 4/1)
+- ✅ Related work discovered from commits
+- **Time to value**: 2-3 minutes, NO API rate limits
+
+**Use case**: Understanding completed work, learning from implementation, preparing similar feature
+
+**Why Git > JIRA for completed tickets**:
+- Git has actual code + tests (more detailed)
+- Git has commit messages (technical decisions)
+- Git has timeline (development flow)
+- Git has NO rate limits (always accessible)
+- Git shows what was ACTUALLY built (vs planned)
 
 ---
 
